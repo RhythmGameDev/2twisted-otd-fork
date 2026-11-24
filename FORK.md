@@ -22,6 +22,28 @@ any output mode sees each tablet separately.
 
 `IDeviceEndpoint` (in the plugin library) is unchanged, so plugins built for 0.6 keep working.
 
+## Releases
+
+| System | File | Build with |
+| --- | --- | --- |
+| Windows | `OpenTabletDriver-<v>_win-x64.zip` (portable: settings in its `userdata` folder) | `eng/windows/package-2twisted.ps1` |
+| Linux | `opentabletdriver-<v>_linux-x64_binary.tar.gz` | `eng/bash/package-2twisted.sh` |
+| macOS | `OpenTabletDriver-<v>_osx-x64.tar.gz` (Intel; Apple Silicon through Rosetta 2) | `eng/bash/package-2twisted.sh` |
+
+All need the .NET 10 runtime except macOS, whose app carries its own. Upstream's own installs are replaced, not
+added to: on Linux and macOS this fork uses the same settings folder as upstream OpenTabletDriver.
+
+- **Linux**: unpack it at `/` (it holds `usr/local/...` and `etc/udev/rules.d/...`), e.g.
+  `sudo tar -xzf opentabletdriver-*_linux-x64_binary.tar.gz --strip-components=1 -C /`, then
+  `sudo udevadm control --reload-rules && sudo udevadm trigger`, and run `otd-gui` (or `systemctl --user enable
+  --now opentabletdriver` for the daemon). Remove an upstream package first.
+- **macOS**: unpack, move `OpenTabletDriver.app` to Applications, and since it is not signed by a developer, run
+  `xattr -cr /Applications/OpenTabletDriver.app` once before opening it. macOS asks for Accessibility and Input
+  Monitoring the first time, as for upstream.
+
+An Apple Silicon (arm64) build needs a code signature to run at all; upstream's `build.sh macos-signed` makes one
+when `rcodesign` or `codesign` is installed, which this PC does not have.
+
 ## Tests
 
 - `OpenTabletDriver.Tests/IdenticalTabletsTest.cs`: grouping, the sibling rule, renaming.

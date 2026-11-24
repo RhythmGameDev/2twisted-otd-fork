@@ -25,3 +25,7 @@ BenchmarkDotNet.Artifacts/
 # Nix environment
 [Rr]esult
 .data/
+
+# 2Twisted fork: release build folders (eng/bash/package-2twisted.sh)
+out-linux/
+out-macos/
