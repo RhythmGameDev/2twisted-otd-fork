@@ -18,6 +18,13 @@ namespace OpenTabletDriver.Devices.HidSharpBackend
 
         private HidDevice device;
 
+        /// <summary>
+        /// Whether this endpoint and <paramref name="other"/> are interfaces of the same physical device
+        /// (backport of the 0.7 <c>IsSibling</c>, kept off <see cref="IDeviceEndpoint"/> so plugins that
+        /// implement that interface keep working).
+        /// </summary>
+        internal bool IsSiblingOf(HidSharpEndpoint other) => device.SafeGet(d => d.IsSibling(other.device), false);
+
         public int ProductID => device.ProductID;
         public int VendorID => device.VendorID;
         public int InputReportLength => device.SafeGet(d => d.GetMaxInputReportLength(), -1);

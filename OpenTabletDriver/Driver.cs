@@ -60,7 +60,7 @@ namespace OpenTabletDriver
                 var treeBuilder = ImmutableArray.CreateBuilder<InputDeviceTree>();
                 foreach (var config in _deviceConfigurationProvider.TabletConfigurations)
                 {
-                    if (Match(config) is InputDeviceTree tree)
+                    foreach (var tree in MatchAll(config))
                     {
                         success = true;
                         treeBuilder.Add(tree);
@@ -98,26 +98,59 @@ namespace OpenTabletDriver
             }
         }
 
-        protected virtual InputDeviceTree? Match(TabletConfiguration config)
+        // TWO (OR MORE) OF THE SAME TABLET (2Twisted fork, upstream issue #1666). Upstream 0.6 took the first
+        // matching device for each configuration and left the rest unused, so two identical tablets were one.
+        // Here every physical device that matches a configuration becomes its own tablet:
+        //   - the digitizer endpoints that match are grouped by physical device (IsSibling, as in 0.7), and each
+        //     group yields one digitizer, chosen exactly as before (identifiers in order, the first that opens);
+        //   - each tablet's auxiliary device is the one on the same physical device;
+        //   - the first tablet keeps the configuration's name, so a single tablet (and its saved profile) is
+        //     exactly as before; the others are "Name (2)", "Name (3)"... Profiles, the UX's tablet list and
+        //     output-mode plugins all tell tablets apart by name, so each gets its own area and output mode.
+        //   - the order is the device path's, which follows the USB port: the same tablets in the same ports
+        //     keep their names across restarts.
+        protected virtual IEnumerable<InputDeviceTree> MatchAll(TabletConfiguration config)
         {
             Log.Debug("Detect", $"Searching for tablet '{config.Name}'");
+            var trees = new List<InputDeviceTree>();
             try
             {
-                var devices = new List<InputDevice>();
-                if (MatchDevice(config, config.DigitizerIdentifiers) is InputDevice digitizer)
-                {
-                    Log.Write("Detect", $"Found tablet '{config.Name}'");
-                    devices.Add(digitizer);
+                var physical = GroupBySibling(MatchingEndpoints(config, config.DigitizerIdentifiers));
+                if (physical.Count > 1)
+                    Log.Write("Detect", $"Found {physical.Count} '{config.Name}' tablets; each is its own tablet.");
 
-                    if ((config.AuxiliaryDeviceIdentifiers?.Count ?? 0) > 0)
+                var auxCandidates = (config.AuxiliaryDeviceIdentifiers?.Count ?? 0) > 0
+                    ? MatchingEndpoints(config, config.AuxiliaryDeviceIdentifiers!)
+                    : new List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)>();
+                var usedAux = new HashSet<IDeviceEndpoint>();
+
+                foreach (var group in physical)
+                {
+                    var tabletConfig = trees.Count == 0 ? config : Renamed(config, $"{config.Name} ({trees.Count + 1})");
+                    if (OpenFirst(tabletConfig, group) is not InputDevice digitizer)
+                        continue;
+
+                    Log.Write("Detect", $"Found tablet '{tabletConfig.Name}'");
+                    var devices = new List<InputDevice> { digitizer };
+
+                    if (auxCandidates.Count > 0)
                     {
-                        if (MatchDevice(config, config.AuxiliaryDeviceIdentifiers!) is InputDevice aux)
+                        var siblings = auxCandidates.Where(a => !usedAux.Contains(a.Endpoint) && group.Any(d => AreSiblings(d.Endpoint, a.Endpoint))).ToList();
+                        // One tablet and no sibling information (an endpoint type that cannot say): the old rule,
+                        // the first auxiliary device that matches.
+                        if (siblings.Count == 0 && physical.Count == 1)
+                            siblings = auxCandidates.ToList();
+
+                        if (OpenFirst(tabletConfig, siblings) is InputDevice aux)
+                        {
                             devices.Add(aux);
+                            usedAux.Add(aux.Endpoint);
+                        }
                         else
                             Log.Write("Detect", "Failed to find auxiliary device, express keys may be unavailable.", LogLevel.Warning);
                     }
 
-                    return new InputDeviceTree(config, devices);
+                    trees.Add(new InputDeviceTree(tabletConfig, devices));
                 }
             }
             catch (IOException iex) when (iex.Message.Contains("Unable to open HID class device")
@@ -144,32 +177,74 @@ namespace OpenTabletDriver
             {
                 Log.Exception(ex);
             }
-            return null;
+            return trees;
         }
 
-        private InputDevice? MatchDevice(TabletConfiguration config, IList<DeviceIdentifier> identifiers)
+        // Every endpoint that matches, identifier by identifier in the configuration's order (an endpoint that
+        // matches two identifiers is kept under the first, as before).
+        private List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)> MatchingEndpoints(TabletConfiguration config, IList<DeviceIdentifier> identifiers)
         {
+            var found = new List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)>();
             foreach (var identifier in identifiers)
+                foreach (var device in GetMatchingDevices(config, identifier))
+                    if (!found.Any(f => f.Endpoint == device))
+                        found.Add((device, identifier));
+            return found;
+        }
+
+        // The candidates, one group per physical device, each group in the candidates' order, the groups in
+        // device-path order.
+        internal static List<List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)>> GroupBySibling(
+            List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)> candidates)
+        {
+            var groups = new List<List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)>>();
+            foreach (var candidate in candidates)
             {
-                var matches = GetMatchingDevices(config, identifier);
+                var group = groups.FirstOrDefault(g => g.Any(c => AreSiblings(c.Endpoint, candidate.Endpoint)));
+                if (group == null)
+                    groups.Add(group = new List<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)>());
+                group.Add(candidate);
+            }
+            return groups.OrderBy(g => g.Min(c => c.Endpoint.DevicePath ?? string.Empty), StringComparer.Ordinal).ToList();
+        }
 
-                if (matches.Count() > 1)
-                    Log.Write("Detect", "More than 1 matching device has been found.", LogLevel.Warning);
+        // Two endpoints of one physical device. HidSharp knows (the device's parent); for any other endpoint
+        // type (WinUSB, plugin device hubs) only the very same endpoint counts, the way 0.7 treats WinUSB.
+        internal static bool AreSiblings(IDeviceEndpoint a, IDeviceEndpoint b)
+        {
+            if (ReferenceEquals(a, b) || a.DevicePath == b.DevicePath)
+                return true;
+            if (a.VendorID != b.VendorID || a.ProductID != b.ProductID)
+                return false;
+            return a is HidSharpEndpoint ha && b is HidSharpEndpoint hb && ha.IsSiblingOf(hb);
+        }
 
-                foreach (IDeviceEndpoint dev in matches)
+        // The first of these that opens, as the old MatchDevice did.
+        private InputDevice? OpenFirst(TabletConfiguration config, IEnumerable<(IDeviceEndpoint Endpoint, DeviceIdentifier Identifier)> candidates)
+        {
+            foreach (var (endpoint, identifier) in candidates)
+            {
+                try
                 {
-                    try
-                    {
-                        return new InputDevice(this, dev, config, identifier);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Exception(ex, LogLevel.Warning);
-                    }
+                    return new InputDevice(this, endpoint, config, identifier);
+                }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex, LogLevel.Warning);
                 }
             }
             return null;
         }
+
+        // The same configuration under another name, for the second and later tablets of one model.
+        internal static TabletConfiguration Renamed(TabletConfiguration config, string name) => new TabletConfiguration
+        {
+            Name = name,
+            Specifications = config.Specifications,
+            DigitizerIdentifiers = config.DigitizerIdentifiers,
+            AuxiliaryDeviceIdentifiers = config.AuxiliaryDeviceIdentifiers,
+            Attributes = config.Attributes,
+        };
 
         private IDeviceEndpoint[] GetMatchingDevices(TabletConfiguration configuration, DeviceIdentifier identifier)
         {
