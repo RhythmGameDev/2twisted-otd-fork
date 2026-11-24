@@ -44,6 +44,21 @@ added to: on Linux and macOS this fork uses the same settings folder as upstream
 An Apple Silicon (arm64) build needs a code signature to run at all; upstream's `build.sh macos-signed` makes one
 when `rcodesign` or `codesign` is installed, which this PC does not have.
 
+## 2Twisted plugin
+
+**Playing 2Twisted? You also need the 2Twisted plugin.** The fork only makes OpenTabletDriver see both tablets; the
+plugin is what gives each tablet its own cursor in the game (OpenTabletDriver's own modes all move the one system
+cursor).
+
+1. Install and start this fork (steps per system in [FORK.md](FORK.md)).
+2. Download `TwoTwistedPen.zip` from the [plugin's latest release](https://github.com/RhythmGameDev/2twisted-otd-plugin/releases/latest).
+3. In OpenTabletDriver, open **Plugins > Plugin Manager** and drag and drop the zip onto it (do not unzip it). On
+   Linux use **Install plugin...** (Ctrl+O). Restart the driver.
+4. Pick each tablet in the drop-down at the bottom left (`Name` and `Name (2)`) and set its **Output Mode** to
+   **2Twisted (one cursor per tablet)** or **2Twisted relative (one cursor per tablet)**.
+5. In 2Twisted, **Settings > Input > Pens from OpenTabletDriver** (on by default) lists both tablets; move a pen and
+   it takes a hand.
+
 ## Tests
 
 - `OpenTabletDriver.Tests/IdenticalTabletsTest.cs`: grouping, the sibling rule, renaming.
