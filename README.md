@@ -1,3 +1,38 @@
+> [!IMPORTANT]
+> **This is the 2Twisted fork of OpenTabletDriver, not the official project.**
+> Official OpenTabletDriver: https://github.com/OpenTabletDriver/OpenTabletDriver
+
+# 2Twisted fork: two identical tablets at once
+
+This fork is OpenTabletDriver 0.6.8.1 with one change: **two (or more) tablets of the same model work at the same
+time**, each as its own tablet with its own profile, areas and output mode. Official 0.6 uses only the first
+matching device and ignores the rest (upstream issue [#1666](https://github.com/OpenTabletDriver/OpenTabletDriver/issues/1666)).
+
+It was made for [2Twisted](https://github.com/RhythmGameDev/2twisted-otd-plugin), a rhythm game played with one pen
+per hand, but nothing in it is game specific: any output mode sees each tablet separately.
+
+**What you gain over the official release**
+
+- Two tablets of the same model, e.g. two Gaomon S56K, show up as `Gaomon S56K` and `Gaomon S56K (2)`.
+- Each one gets its own profile, area, output mode and filters.
+- Names follow the USB port, so the same tablets in the same ports keep their settings.
+- One tablet behaves exactly as in the official release, and plugins built for 0.6 keep working.
+
+**Differences from the official release**
+
+- Only `Driver.cs` device matching changed (plus tests and packaging). Details: [FORK.md](FORK.md).
+- The Windows zip is portable: its settings live in its own `userdata` folder, so it can sit beside an installed
+  OpenTabletDriver (run only one at a time). On Linux and macOS it replaces the official install.
+- macOS build is Intel only (Apple Silicon through Rosetta 2) and unsigned.
+- Not yet tried on two real identical tablets, nor on Linux or macOS. Tested on Windows with two emulated tablets.
+- Report fork problems here, not to the OpenTabletDriver team.
+
+Downloads: [Releases](https://github.com/RhythmGameDev/2twisted-otd-fork/releases). Install steps: [FORK.md](FORK.md).
+
+---
+
+*The official OpenTabletDriver README follows.*
+
 [![GitHub Actions Status](https://github.com/OpenTabletDriver/OpenTabletDriver/actions/workflows/dotnet.yml/badge.svg)](https://github.com/OpenTabletDriver/OpenTabletDriver/actions/workflows/dotnet.yml) [![Total Download Count](https://img.shields.io/github/downloads/OpenTabletDriver/OpenTabletDriver/total.svg)](https://github.com/OpenTabletDriver/OpenTabletDriver/releases/latest)
 
 # OpenTabletDriver
